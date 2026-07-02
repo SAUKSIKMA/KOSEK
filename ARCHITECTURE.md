@@ -1,0 +1,206 @@
+# Architecture du pipeline COSEC
+
+Ce document décrit l'architecture technique du pipeline d'automatisation des
+rapports mensuels COSEC (Comité de Sécurité). Il s'adresse à toute personne
+reprenant ou faisant évoluer le code.
+
+## 1. Vue d'ensemble
+
+Le pipeline part d'une requête KQL live sur un workspace Microsoft Sentinel
+(Azure Monitor Query) et produit en sortie :
+
+- un fichier **PowerPoint** (`COSEC_rapport.pptx`) — le rapport mensuel,
+- un fichier **Excel** (`historique_cosec.xlsx`) — l'historique multi-mois
+  utilisé par certaines slides pour afficher une évolution.
+
+Il n'y a **aucune base de données** : l'Excel fait office de mémoire
+persistante entre deux exécutions mensuelles, et le pptx est régénéré en
+intégralité à chaque exécution.
+
+Point d'entrée unique : `generate_cosec.py` (CLI), qui orchestre tous les
+autres modules.
+
+## 2. Schéma du pipeline
+
+```
+                         ┌─────────────────────┐
+                         │   generate_cosec.py   │   <-- CLI / orchestration
+                         └───────────┬───────────┘
+                                     │
+         ┌───────────────────────────┼───────────────────────────┐
+         ▼                           ▼                           ▼
+ ┌───────────────┐          ┌────────────────┐          ┌────────────────┐
+ │ sentinel_query │          │ *_normalize.py │          │  *_slide.py    │
+ │   (KQL live)   │ ───────▶ │ (agrégation /  │ ───────▶ │ (écriture pptx │
+ │                │          │  formatage)    │          │  via python-   │
+ └───────────────┘          └───────┬────────┘          │  pptx)         │
+                                     │                    └────────────────┘
+                                     ▼
+                            ┌────────────────┐
+                            │ excel_history  │   <-- historique multi-mois
+                            │   (openpyxl)   │       (--update-history)
+                            └────────────────┘
+
+  Optionnel (--ai) :  generate_cosec.py ─▶ anonymizer.py ─▶ reformulate.py ─▶ Claude API
+```
+
+Chaque slide de synthèse (Évolution, Surveillance, SLA, Dispositif de
+surveillance, Plan de collecte) suit le même schéma à 3 étages :
+**requête Sentinel → normalisation/agrégation → remplissage pptx**, avec
+ou sans passage par l'Excel historique selon la slide (cf section 5).
+
+## 3. Modules, par responsabilité
+
+### 3.1 Orchestration
+
+| Fichier | Rôle |
+|---|---|
+| `generate_cosec.py` | Point d'entrée CLI. Enchaîne les requêtes Sentinel, la mise à jour optionnelle de l'historique Excel, le clonage des slides de détail par incident, le remplissage des slides de synthèse, leur réordonnancement, puis la sauvegarde du pptx final. Contient aussi les helpers bas niveau de manipulation du XML pptx (clonage de slide, remplacement de texte en préservant le formatage). |
+
+### 3.2 Récupération des données (Microsoft Sentinel)
+
+| Fichier | Rôle |
+|---|---|
+| `sentinel_query.py` | Unique point d'accès à Sentinel. Contient tous les templates de requêtes KQL (incidents du mois, historique de typologies, répartition gravité/clôture, MTTA/MTTR/MTTC, dépassements de SLA, statistiques MITRE ATT&CK, coût d'ingestion des logs) ainsi que la résolution de l'identité ARM du workspace (nom, groupe de ressources, abonnement) via Azure Resource Graph. Gère un cache de credential Azure partagé entre tous les appels d'une même exécution pour éviter les ré-authentifications interactives répétées. |
+
+### 3.3 Normalisation / agrégation (logique métier pure, sans dépendance UI)
+
+| Fichier | Rôle |
+|---|---|
+| `typology_normalize.py` | Retire les suffixes de comptage d'entités générés automatiquement par Sentinel dans les titres d'incidents, puis ré-agrège par typologie normalisée. |
+| `surveillance_normalize.py` | Assemble les 3 requêtes de la slide « État de la surveillance » (gravité, classification de clôture, MTTA/MTTR/MTTC) en une ligne unique. Contient la logique de correspondance des valeurs `Classification` (enum Sentinel toujours en anglais). |
+| `sla_normalize.py` | Convertit les dépassements de SLA bruts en lignes prêtes pour l'Excel (tri par gravité, type de SLA, date), avec conversion des dates ISO en heure de Paris. |
+| `mitre_normalize.py` | Combine les statistiques d'incidents par tactique MITRE ATT&CK avec le nombre de règles analytics actives par tactique, et convertit les clés brutes Microsoft (PascalCase) en libellés affichés. |
+| `log_ingestion_normalize.py` | Regroupe les volumes d'ingestion de logs par catégorie/table, calcule le positionnement sur l'échelle de couleur (heatmap) et sélectionne les catégories à afficher selon le budget de lignes disponible sur la slide. |
+
+### 3.4 Construction des slides (python-pptx)
+
+| Fichier | Rôle |
+|---|---|
+| `typology_slide.py` | Slide « Évolution des incidents par typologie ». Contient aussi plusieurs helpers réutilisés par les autres modules `*_slide.py` (clonage de slide générique, recherche de shape par nom, réordonnancement des slides) — voir section 4. |
+| `surveillance_slide.py` | Slide « État de la surveillance » : panneau de texte, 2 donuts (gravité / clôture), 3 cartes KPI (MTTA/MTTR/MTTC). |
+| `sla_slide.py` | Slide « Dépassement des SLA » : tableau des incidents en dépassement MTTA/MTTR pour le mois cible. |
+| `mitre_slide.py` | Slide « Dispositif de surveillance » : remplissage des 12 encadrés de tactique MITRE ATT&CK déjà présents dans le template. |
+| `log_ingestion_slide.py` | Slide « Plan de collecte » : tableau arborescent catégorie/table avec barre de volume et dégradé de couleur. |
+
+### 3.5 Persistance Excel
+
+| Fichier | Rôle |
+|---|---|
+| `excel_history.py` | Lecture/écriture des 3 onglets de `historique_cosec.xlsx` (Typologies, Surveillance, SLA). Toutes les écritures sont idempotentes par mois : relancer pour un mois déjà présent remplace ses lignes sans dupliquer, sans toucher aux autres mois. |
+
+### 3.6 Reformulation IA (optionnel, `--ai`)
+
+| Fichier | Rôle |
+|---|---|
+| `anonymizer.py` | Anonymisation réversible (UPN, IP, hôtes, fichiers, groupes...) avant tout envoi de texte à l'API Claude, avec table de correspondance locale et détection de fuite résiduelle. |
+| `reformulate.py` | Construit le payload anonymisé d'un incident, appelle l'API Claude pour produire une description de niveau consultant, puis désanonymise le résultat. |
+
+## 4. Conventions internes notables
+
+- **Duplication volontaire de petites fonctions utilitaires** (`_get_shape_by_name`,
+  `_set_cell_text`, `_format_dt`, parsing de date ISO en heure de Paris...)
+  entre certains modules `*_slide.py` / `*_normalize.py`, plutôt qu'un import
+  croisé, afin d'éviter les imports circulaires (ex: `anonymizer.py` /
+  `reformulate.py` important `generate_cosec.parse_json_array`).
+- **Slides de synthèse capturées par index fixe** (`prs.slides[1]` à `[5]`)
+  *avant* tout réordonnancement (`move_slide_to_front`), car ce dernier
+  repose sur le `slide_id` et fait glisser les index une fois invoqué.
+- **Idempotence par mois** sur les 3 onglets Excel : une ré-exécution avec
+  `--update-history` sur un mois déjà traité remplace ses lignes plutôt que
+  de les dupliquer.
+- **Tolérance aux pannes différenciée** : les échecs de requêtes
+  « cosmétiques » (nom du workspace, statistiques MITRE, coût d'ingestion)
+  sont avalés avec un avertissement console ; les échecs sur les données
+  cœur du rapport (incidents du mois, historique surveillance/SLA en mode
+  `--update-history`) interrompent le script (`sys.exit(1)`).
+
+## 5. Les 6 slides du template (`template_slide.pptx`)
+
+Le template contient les slides suivantes, dans cet ordre fixe en entrée
+(capturées par index avant tout réordonnancement) :
+
+| Index | Contenu | Source des données | Historique Excel ? |
+|---|---|---|---|
+| 0 | Détail d'un incident (« Focus sur incident ») — clonée une fois par incident du mois | `fetch_cosec_incidents` | Non |
+| 1 | Évolution des incidents par typologie | `fetch_typology_history` | Oui (onglet Typologies) — affiche le dernier mois de l'historique |
+| 2 | État de la surveillance (gravité / clôture / MTTA-MTTR-MTTC) | `fetch_severity_breakdown`, `fetch_classification_breakdown`, `fetch_resolution_times` | Oui (onglet Surveillance) — affiche le dernier mois de l'historique |
+| 3 | Dépassement des SLA | `fetch_sla_breaches` | Oui (onglet SLA) — affiche le **mois cible** du rapport |
+| 4 | Dispositif de surveillance (couverture MITRE ATT&CK) | `fetch_mitre_tactics_stats`, `fetch_active_rules_by_tactic` (bonus) | Non — affiche directement le mois cible |
+| 5 | Plan de collecte (coût d'ingestion des logs) | `fetch_log_ingestion_costs` | Non — affiche directement le mois cible |
+
+En sortie, l'ordre final des slides est : Surveillance, Évolution, SLA,
+Dispositif de surveillance, Plan de collecte, puis les slides de détail par
+incident (cf `generate_pptx()` dans `generate_cosec.py` pour le détail de
+la logique de réordonnancement).
+
+Chaque slide peut être désactivée individuellement via un flag CLI
+`--no-<slide>-slide` (cf README.txt).
+
+## 6. L'Excel historique (`historique_cosec.xlsx`)
+
+Trois onglets indépendants, chacun avec sa propre granularité :
+
+| Onglet | Granularité | Colonnes principales |
+|---|---|---|
+| **Typologies** | 1 ligne par (Mois, Typologie) | Mois, Typologie, Sources d'alerte, Nombre d'incidents |
+| **Surveillance** | 1 ligne par Mois | Mois, Total, répartition par gravité (4), répartition par clôture (4), MTTA, MTTR, MTTC |
+| **SLA** | 1 ligne par incident en dépassement | Mois, Type SLA, N°INC, Sévérité, Titre, Créé le, Attribution, Clôture |
+
+Ces 3 onglets sont alimentés indépendamment (`write_history`,
+`write_surveillance_history`, `write_sla_history`) — l'ordre d'appel entre
+eux n'a aucune importance.
+
+## 7. Dépendances Python
+
+### 7.1 Bibliothèques tierces à installer
+
+```bash
+pip install azure-identity azure-monitor-query azure-mgmt-resourcegraph \
+            azure-mgmt-subscription azure-mgmt-securityinsight \
+            openpyxl python-pptx lxml anthropic
+```
+
+| Bibliothèque | Utilisée par | Rôle | Obligatoire ? |
+|---|---|---|---|
+| `azure-identity` | `sentinel_query.py` | Authentification interactive Azure AD (`InteractiveBrowserCredential`) | Oui |
+| `azure-monitor-query` | `sentinel_query.py` | Exécution des requêtes KQL (`LogsQueryClient`) | Oui |
+| `azure-mgmt-resourcegraph` | `sentinel_query.py` | Résolution du nom/groupe de ressources/abonnement du workspace (bandeau « Confidentiel », bonus MITRE) | Oui |
+| `azure-mgmt-subscription` | `sentinel_query.py` | Énumération des abonnements accessibles, requise par Resource Graph | Oui |
+| `azure-mgmt-securityinsight` | `sentinel_query.py` | Bonus « Nombre de règles actives » par tactique MITRE ATT&CK (slide Dispositif de surveillance) | **Non** — import différé, dégrade en `N/A` si absent |
+| `openpyxl` | `excel_history.py`, `*_slide.py` (lecture) | Lecture/écriture de `historique_cosec.xlsx` | Oui |
+| `python-pptx` (package `pptx`) | `generate_cosec.py`, `*_slide.py` | Génération du rapport PowerPoint | Oui |
+| `lxml` | `generate_cosec.py`, `surveillance_slide.py`, `log_ingestion_slide.py`, `typology_slide.py` | Manipulation directe du XML pptx (runs, mise en page de légende, clonage de relations) | Oui |
+| `anthropic` | `reformulate.py` | Appel à l'API Claude pour la reformulation des descriptions d'incidents | **Non** — uniquement requis si le flag `--ai` est utilisé |
+
+### 7.2 Bibliothèques standard utilisées
+
+`json`, `os`, `re`, `sys`, `copy`, `argparse`, `math`, `ipaddress`, `datetime`
+— aucune installation requise (incluses avec Python).
+
+### 7.3 Version de Python
+
+**Python 3.9 minimum** : le code utilise la syntaxe de generics native sur
+les types intégrés (`list[dict]`, `list[tuple[str, str]]`), introduite par
+la PEP 585. Une version 3.10 ou 3.11 est recommandée.
+
+### 7.4 Variable d'environnement
+
+| Variable | Requise pour | Description |
+|---|---|---|
+| `ANTHROPIC_API_KEY` | `--ai` | Clé d'API Anthropic, utilisée par `reformulate.make_client()`. Le script s'arrête avec une erreur explicite si elle est absente et que `--ai` est demandé. |
+
+## 8. Authentification Azure
+
+L'authentification se fait via `InteractiveBrowserCredential` (popup de
+connexion dans le navigateur par défaut). Une seule authentification est
+déclenchée par exécution du script et par `tenant_id` distinct : l'instance
+de credential est mise en cache en mémoire process (`sentinel_query.
+_credential_cache`) et réutilisée pour tous les appels suivants (Log
+Analytics, Resource Graph, gestion Sentinel), y compris vers des scopes
+Azure différents.
+
+Le compte utilisé doit avoir accès en lecture au workspace Log Analytics
+ciblé (`--workspace-id`), ainsi qu'à l'abonnement qui l'héberge si les
+fonctionnalités optionnelles (bandeau « Confidentiel », bonus « Nombre de
+règles ») sont souhaitées.

@@ -71,8 +71,6 @@ _CAPTION_TEMPLATE = ("Ici, nous pouvons retrouver la répartition des ingestions
 
 
 def _get_shape_by_name(slide, name):
-    """Retourne la shape de la slide portant le nom donne, ou None si aucune
-    shape ne correspond (cf typology_slide._get_shape_by_name, duplique ici)."""
     for shape in slide.shapes:
         if shape.name == name:
             return shape
@@ -121,10 +119,6 @@ def _heat_color(fraction: float) -> RGBColor:
 
 
 def _set_cell_text(cell, text, size_pt, bold=False, color=None, align=None, bg=None):
-    """Remplit une cellule de tableau pptx (texte, fond, alignement, police/
-    taille/gras/couleur du run) -- cf typology_slide._set_cell_text, duplique
-    ici avec une garde sur runs vides (utile pour les colonnes sans texte,
-    ex: colonne "Taille" remplie uniquement par la barre de heatmap)."""
     cell.text = str(text)
     cell.vertical_anchor = MSO_ANCHOR.MIDDLE
     if bg is not None:

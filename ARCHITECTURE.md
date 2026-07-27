@@ -18,7 +18,9 @@ persistante entre deux exécutions mensuelles, et le pptx est régénéré en
 intégralité à chaque exécution.
 
 Point d'entrée unique : `generate_cosec.py` (CLI), qui orchestre tous les
-autres modules.
+autres modules. Le pipeline traite un client par exécution ; pour
+plusieurs clients partageant le même code et le même template, voir
+l'orchestrateur `run_all_clients.py` (section 9).
 
 ## 2. Schéma du pipeline
 
@@ -55,7 +57,8 @@ ou sans passage par l'Excel historique selon la slide (cf section 5).
 
 | Fichier | Rôle |
 |---|---|
-| `generate_cosec.py` | Point d'entrée CLI. Enchaîne les requêtes Sentinel, la mise à jour optionnelle de l'historique Excel, le clonage des slides de détail par incident, le remplissage des slides de synthèse, leur réordonnancement, puis la sauvegarde du pptx final. Contient aussi les helpers bas niveau de manipulation du XML pptx (clonage de slide, remplacement de texte en préservant le formatage). |
+| `generate_cosec.py` | Point d'entrée CLI. Enchaîne les requêtes Sentinel, la mise à jour optionnelle de l'historique Excel, le clonage des slides de détail par incident, le remplissage des slides de synthèse, leur réordonnancement, puis la sauvegarde du pptx final. Contient aussi les helpers bas niveau de manipulation du XML pptx (clonage de slide, remplacement de texte en préservant le formatage). `generate_pptx()` accepte `template_path=` et `output_path=` (défauts : `TEMPLATE_PATH`/`OUTPUT_PATH`, comme `history_excel=`) — surchargeables via `--template-path`/`--output`, ce qui permet l'usage multi-clients (cf section 9) sans dupliquer le code. |
+| `run_all_clients.py` | Orchestrateur multi-clients (optionnel, ajouté le 27/07/2026). Lit `clients.json`, boucle sur chaque client déclaré et appelle `generate_pptx()` directement (import, pas de subprocess) avec un `history_excel`/`output_path` distinct par client mais un `template_path` partagé. Isole les échecs par client (un client en erreur n'interrompt pas les suivants) et journalise dans `logs/`. Voir section 9. |
 
 ### 3.2 Récupération des données (Microsoft Sentinel)
 
@@ -204,3 +207,99 @@ Le compte utilisé doit avoir accès en lecture au workspace Log Analytics
 ciblé (`--workspace-id`), ainsi qu'à l'abonnement qui l'héberge si les
 fonctionnalités optionnelles (bandeau « Confidentiel », bonus « Nombre de
 règles ») sont souhaitées.
+
+> **Multi-clients** : ce cache est la raison pour laquelle
+> `run_all_clients.py` (section 9) appelle `generate_pptx()` par import
+> dans un seul process plutôt que via un subprocess par client — les
+> clients partageant un même `tenant_id` (accès MSP/Lighthouse) ne
+> déclenchent qu'une seule authentification interactive pour tout le run,
+> au lieu d'une par client.
+
+## 9. Utilisation multi-clients (ajouté le 27/07/2026)
+
+Le pipeline génère un rapport pour **un** client par appel de
+`generate_pptx()`. Pour plusieurs clients, on ne duplique pas le code : un
+seul jeu de scripts et un seul `template_slide.pptx` sont partagés, seuls
+`history_excel` et `output_path` varient par client (chacun ayant son
+propre historique Excel, comme demandé par l'utilisateur).
+
+### 9.1 Arborescence recommandée
+
+```
+cosec/
+├── scripts/                 <- code partagé (les modules ci-dessus, inchangés)
+├── template_slide.pptx      <- template unique, partagé par tous les clients
+├── clients.json             <- config déclarative de tous les clients
+├── clients/
+│   ├── CLIENT1/
+│   │   ├── historique_cosec.xlsx
+│   │   └── output/          <- COSEC_CLIENT1_<AAAA>-<MM>.pptx
+│   └── CLIENT2/
+│       ├── historique_cosec.xlsx
+│       └── output/
+├── run_all_clients.py       <- orchestrateur
+└── logs/                    <- un fichier de log par run (créé automatiquement)
+```
+
+### 9.2 `clients.json`
+
+Un objet par client, avec au minimum `name`, `workspace_id` et
+`history_excel`. Champs optionnels : `tenant_id`, `price_per_gb` (défaut
+4.89), `output_dir`, et les flags `no_<slide>_slide` (mêmes noms que les
+options CLI `--no-<slide>-slide`, en `snake_case`, valeur booléenne) pour
+désactiver une slide pour un client donné sans toucher aux autres.
+
+```json
+[
+  {
+    "name": "CLIENT1",
+    "workspace_id": "00000000-0000-0000-0000-000000000001",
+    "tenant_id": "11111111-1111-1111-1111-111111111111",
+    "history_excel": "clients/CLIENT1/historique_cosec.xlsx",
+    "output_dir": "clients/CLIENT1/output",
+    "price_per_gb": 4.89
+  }
+]
+```
+
+### 9.3 `run_all_clients.py`
+
+Charge `clients.json`, puis pour chaque client : construit
+`output_path = <output_dir>/COSEC_<name>_<année>-<mois>.pptx`, appelle
+`generate_pptx()` avec les paramètres du client et le `template_path`
+partagé, capture toute exception pour ne pas interrompre les clients
+suivants, et journalise un bilan final (réussites/échecs) dans
+`logs/run_<année>-<mois>_<horodatage>.log`.
+
+Le mode mono-client d'origine (`python generate_cosec.py --workspace-id
+...`) reste utilisable tel quel depuis `scripts/`, avec les nouvelles
+options `--template-path`/`--output` pour pointer vers l'arborescence
+ci-dessus si besoin.
+
+### 9.4 Commandes
+
+```bash
+# Tous les clients déclarés dans clients.json
+python run_all_clients.py --year 2026 --month 6 --update-history
+
+# Un sous-ensemble de clients seulement
+python run_all_clients.py --year 2026 --month 6 --only CLIENT1,CLIENT2
+
+# Avec reformulation IA (Claude)
+python run_all_clients.py --year 2026 --month 6 --update-history --ai
+```
+
+### 9.5 Limites connues
+
+- **Exécution séquentielle uniquement** : `run_all_clients.py` ne
+  parallélise pas les clients. Avec `InteractiveBrowserCredential`, lancer
+  plusieurs clients en parallèle déclencherait des popups de connexion
+  concurrents. Une parallélisation ne serait envisageable qu'après
+  migration vers une authentification non interactive (service principal)
+  par tenant.
+- **Pas de gestion de secrets dédiée** : `clients.json` ne contient pas
+  d'information sensible en l'état (les `workspace_id`/`tenant_id` ne sont
+  pas des secrets), mais si une authentification par service principal est
+  ajoutée à l'avenir, les secrets associés devront être externalisés
+  (variables d'environnement ou coffre) plutôt qu'ajoutés en clair dans ce
+  fichier.

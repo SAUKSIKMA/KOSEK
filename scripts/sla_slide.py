@@ -92,8 +92,6 @@ def filter_target_month(rows: list, year: int, month: int) -> list:
 
 
 def _format_dt(value) -> str:
-    """Formate une date en DD/MM/YYYY HH:MM ; chaine vide si value est vide
-    (cas attendu pour Clôture sur un depassement MTTA non encore cloture)."""
     if value is None or value == "":
         return ""
     if hasattr(value, "strftime"):
@@ -102,8 +100,6 @@ def _format_dt(value) -> str:
 
 
 def _get_shape_by_name(slide, name):
-    """Retourne la shape de la slide portant le nom donne, ou None si aucune
-    shape ne correspond (cf typology_slide._get_shape_by_name, duplique ici)."""
     for shape in slide.shapes:
         if shape.name == name:
             return shape
@@ -111,10 +107,6 @@ def _get_shape_by_name(slide, name):
 
 
 def _set_cell_text(cell, text, size_pt, bold=False, color=None, align=None, bg=None):
-    """Remplit une cellule de tableau pptx (texte, fond, alignement, police/
-    taille/gras/couleur du run) -- cf typology_slide._set_cell_text, duplique
-    ici avec une garde sur runs vides (necessaire pour la colonne Clôture,
-    qui peut etre une chaine vide -- cf appel plus bas)."""
     cell.text = str(text)
     cell.vertical_anchor = MSO_ANCHOR.MIDDLE
     if bg is not None:

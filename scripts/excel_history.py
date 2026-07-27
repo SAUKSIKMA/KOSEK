@@ -39,7 +39,6 @@ TABLE_NAME = "HistoriqueTypologies"
 
 
 def _new_workbook():
-    """Cree un classeur Excel vide avec l'onglet Typologies et sa ligne d'en-tete."""
     wb = Workbook()
     ws = wb.active
     ws.title = SHEET_NAME
@@ -48,10 +47,6 @@ def _new_workbook():
 
 
 def _read_existing_rows(ws) -> list:
-    """Relit les lignes de donnees (hors en-tete) d'une feuille Typologies
-    deja existante, sous forme de dicts {Month, Title, AlertSources,
-    IncidentCount} -- utilise avant remplacement pour preserver les mois
-    non concernes par l'ecriture en cours."""
     rows = []
     for row in ws.iter_rows(min_row=2, values_only=True):
         if row[0] is None:
@@ -71,9 +66,6 @@ def _to_display_sources(sources) -> str:
 
 
 def _apply_formatting(ws, n_rows: int):
-    """Applique la mise en forme de l'onglet Typologies : en-tete blanc sur
-    fond bleu marque, corps en Arial 10, largeurs de colonnes fixes et
-    figeage de la ligne d'en-tete (freeze_panes)."""
     header_font = Font(name="Arial", bold=True, color="FFFFFF")
     header_fill = PatternFill("solid", start_color="1F4E78")
     body_font = Font(name="Arial", size=10)
@@ -171,9 +163,6 @@ _SURVEILLANCE_FLOAT_KEYS = {"MTTA", "MTTR", "MTTC"}
 
 
 def _read_existing_surveillance_rows(ws) -> list:
-    """Relit les lignes de donnees (hors en-tete) d'une feuille Surveillance
-    deja existante, sous forme de dicts cles sur SURVEILLANCE_KEYS -- une
-    ligne par mois deja present dans l'historique."""
     rows = []
     for row in ws.iter_rows(min_row=2, values_only=True):
         if row[0] is None:
@@ -183,10 +172,6 @@ def _read_existing_surveillance_rows(ws) -> list:
 
 
 def _apply_surveillance_formatting(ws, n_rows: int):
-    """Applique la mise en forme de l'onglet Surveillance : memes couleurs
-    de marque que l'onglet Typologies, mais toutes les colonnes (y compris
-    les mesures) sont centrees -- il n'y a pas de colonne "libelle long"
-    a aligner a gauche comme la Typologie."""
     header_font = Font(name="Arial", bold=True, color="FFFFFF")
     header_fill = PatternFill("solid", start_color="1F4E78")
     body_font = Font(name="Arial", size=10)
@@ -285,9 +270,6 @@ _SLA_DATE_FORMAT = "DD/MM/YYYY HH:MM"
 
 
 def _read_existing_sla_rows(ws) -> list:
-    """Relit les lignes de donnees (hors en-tete) d'une feuille SLA deja
-    existante, sous forme de dicts cles sur SLA_KEYS -- une ligne par
-    incident en depassement, tous mois confondus."""
     rows = []
     for row in ws.iter_rows(min_row=2, values_only=True):
         if row[0] is None:
@@ -297,10 +279,6 @@ def _read_existing_sla_rows(ws) -> list:
 
 
 def _apply_sla_formatting(ws, n_rows: int):
-    """Applique la mise en forme de l'onglet SLA : memes couleurs de marque
-    que les deux autres onglets, format de date DD/MM/YYYY HH:MM sur les
-    3 colonnes de dates (cf _SLA_DATE_COLUMNS), et centrage des colonnes
-    courtes (Type SLA, N°INC, Sévérité)."""
     header_font = Font(name="Arial", bold=True, color="FFFFFF")
     header_fill = PatternFill("solid", start_color="1F4E78")
     body_font = Font(name="Arial", size=10)

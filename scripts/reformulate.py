@@ -13,7 +13,7 @@ import anthropic
 from anonymizer import Anonymizer
  
  
-MODEL = "claude-sonnet-4-6"
+MODEL = "claude-sonnet-4-6"   # ou claude-sonnet-4-6 pour un cout/latence reduit
 MAX_TOKENS = 1024
  
  

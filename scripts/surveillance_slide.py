@@ -138,9 +138,6 @@ def build_latest_with_evolution(rows: list):
 
 
 def _format_int_delta(current: int, previous) -> str:
-    """Delta signe entre deux compteurs entiers (Total, gravites, categories
-    de cloture) : "Nouveau" si pas de mois precedent, sinon "+N"/"-N"/"0"
-    -- equivalent entier de _format_duration_delta() pour les durees."""
     if previous is None:
         return "Nouveau"
     delta = current - previous
@@ -212,8 +209,6 @@ def _evolution_style(evolution: str) -> dict:
 
 
 def _get_shape_by_name(slide, name):
-    """Retourne la shape de la slide portant le nom donne, ou None si aucune
-    shape ne correspond (cf typology_slide._get_shape_by_name, duplique ici)."""
     for shape in slide.shapes:
         if shape.name == name:
             return shape
@@ -226,10 +221,6 @@ def _get_shape_by_name(slide, name):
 # ---------------------------------------------------------------------------
 
 def _add_panel_line(tf, label: str, value, evolution: str, first: bool = False):
-    """Ajoute au panneau de texte une ligne 'label : valeur  (evolution)',
-    avec le badge colore de _evolution_style sur l'évolution. `first=True`
-    reutilise le tout premier paragraphe du text_frame au lieu d'en
-    ajouter un nouveau (deja cree par defaut par python-pptx)."""
     p = tf.paragraphs[0] if first else tf.add_paragraph()
     p.space_after = Pt(8)
 
@@ -257,8 +248,6 @@ def _add_panel_line(tf, label: str, value, evolution: str, first: bool = False):
 
 
 def _add_panel_subheader(tf, text: str):
-    """Ajoute un sous-titre de section au panneau de texte (ex: 'Répartition
-    par gravité', 'Catégorie de clôture')."""
     p = tf.add_paragraph()
     p.space_before = Pt(4)
     p.space_after = Pt(8)
@@ -271,9 +260,6 @@ def _add_panel_subheader(tf, text: str):
 
 
 def _add_panel_spacer(tf):
-    """Ajoute un petit paragraphe d'espacement (espace fin) juste après un
-    sous-titre de section -- cf _add_panel_section_gap pour l'espacement,
-    plus marqué, utilisé avant un sous-titre."""
     p = tf.add_paragraph()
     p.space_after = Pt(2)
     r = p.add_run()
@@ -294,9 +280,6 @@ def _add_panel_section_gap(tf):
 
 
 def _add_panel_header(tf, text: str, evolution: str = None, first: bool = False):
-    """Ajoute l'en-tete principal du panneau de texte (ex: 'N incidents en
-    AAAA-MM'), avec un badge d'evolution optionnel accole. `first=True`
-    reutilise le tout premier paragraphe du text_frame -- cf _add_panel_line."""
     p = tf.paragraphs[0] if first else tf.add_paragraph()
     p.space_after = Pt(14)
     r = p.add_run()
@@ -317,10 +300,6 @@ def _add_panel_header(tf, text: str, evolution: str = None, first: bool = False)
 
 
 def _build_text_panel(slide, left, top, width, height, latest: dict, previous):
-    """Construit le panneau de texte de gauche (encadré arrondi gris clair) :
-    en-tête total + évolution, puis répartition par gravité, puis par
-    catégorie de clôture, chaque ligne accompagnée de son badge d'évolution
-    vs le mois précédent (cf _add_panel_header / _add_panel_line)."""
     panel = slide.shapes.add_shape(MSO_SHAPE.ROUNDED_RECTANGLE, left, top, width, height)
     panel.adjustments[0] = 0.03
     panel.fill.solid()
@@ -364,10 +343,6 @@ def _build_text_panel(slide, left, top, width, height, latest: dict, previous):
 
 def _add_donut(slide, left, top, width, height, title: str,
                 categories: list, values: list, colors: list, center_total: int):
-    """Construit un donut chart natif pptx avec titre centré sur le cercle,
-    légende à droite, étiquettes de valeur sur chaque tranche, et un total
-    affiché en surimpression au centre de l'anneau (cf commentaires inline
-    ci-dessous pour le détail de chaque ajustement visuel)."""
     # Le titre est centre sur la portion VISUELLE du donut (le cercle),
     # pas sur la largeur totale du cadre graphique -- la legende a droite
     # (cf DONUT_VISUAL_WIDTH_RATIO) decale sinon visuellement le titre
@@ -486,10 +461,6 @@ def _add_donut(slide, left, top, width, height, title: str,
 # ---------------------------------------------------------------------------
 
 def _add_kpi_card(slide, left, top, width, height, key: str, value: float, previous):
-    """Construit une carte KPI (MTTA, MTTR ou MTTC) : encadré blanc à coins
-    arrondis avec une bande verticale colorée (KPI_ACCENT), le libellé
-    (KPI_LABELS), la valeur formatée (_format_duration) et son évolution
-    signée vs le mois précédent (_format_duration_delta)."""
     card = slide.shapes.add_shape(MSO_SHAPE.ROUNDED_RECTANGLE, left, top, width, height)
     card.adjustments[0] = 0.06
     card.fill.solid()

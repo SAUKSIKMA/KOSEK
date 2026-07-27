@@ -52,8 +52,6 @@ def _paragraph_text(p) -> str:
 
 
 def _format_dt(value) -> str:
-    """Formate une date en DD/MM/YYYY ; retourne "N/A" si value est vide
-    (valeur par defaut du template, cf docstring du module)."""
     if value is None:
         return "N/A"
     if hasattr(value, "strftime"):

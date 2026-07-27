@@ -42,6 +42,11 @@ from log_ingestion_slide import fill_log_ingestion_slide
 
 TEMPLATE_PATH = "template_slide.pptx"
 OUTPUT_PATH   = "COSEC_rapport.pptx"
+# TEMPLATE_PATH / OUTPUT_PATH restent les valeurs par defaut (usage mono-
+# client, retro-compatible) mais generate_pptx() accepte desormais
+# template_path= / output_path= en parametres explicites, sur le meme
+# modele que history_excel=, pour permettre l'usage multi-clients (ajoute
+# le 27/07/2026 -- cf run_all_clients.py) sans dupliquer le code par client.
 # Renomme le 22/06/2026 (historique_typologies.xlsx -> historique_cosec.xlsx) :
 # le classeur heberge desormais 2 historiques mensuels independants, dans 2
 # onglets distincts ("Typologies" et "Surveillance") -- cf excel_history.py.
@@ -653,8 +658,9 @@ def generate_pptx(workspace_id: str, year: int, month: int, tenant_id: str = Non
                    update_history: bool = False, history_excel: str = HISTORY_EXCEL_PATH,
                    evolution_slide: bool = True, surveillance_slide: bool = True,
                    sla_slide: bool = True, dispositif_slide: bool = True,
-                   log_ingestion_slide: bool = True, price_per_gb: float = 4.89):
-    prs = Presentation(TEMPLATE_PATH)
+                   log_ingestion_slide: bool = True, price_per_gb: float = 4.89,
+                   template_path: str = TEMPLATE_PATH, output_path: str = OUTPUT_PATH):
+    prs = Presentation(template_path)
 
     # --- Resolution du nom du workspace pour le bandeau "Confidentiel –
     #     COSEC - <client>" (cf update_confidential_banner, applique en
@@ -1069,8 +1075,8 @@ def generate_pptx(workspace_id: str, year: int, month: int, tenant_id: str = Non
         print(f"✅ Bandeau \"Confidentiel – COSEC\" mis à jour avec le suffixe \"{workspace_name_suffix}\" "
               f"({n_banner} zone(s) de texte modifiée(s)).")
 
-    prs.save(OUTPUT_PATH)
-    print(f"\n✅ Fichier généré : {OUTPUT_PATH}")
+    prs.save(output_path)
+    print(f"\n✅ Fichier généré : {output_path}")
 
 
 if __name__ == "__main__":
@@ -1109,6 +1115,12 @@ if __name__ == "__main__":
                          help="Prix en €/Go ingéré, pour le calcul du coût estimé de la slide "
                               "\"Plan de collecte\" (défaut : 4.89 €/Go) — passer une autre valeur "
                               "pour l'écraser ponctuellement")
+    parser.add_argument("--template-path", default=TEMPLATE_PATH,
+                         help=f"Chemin du template pptx (défaut : {TEMPLATE_PATH}) — utile pour "
+                              f"pointer vers un template partagé situé ailleurs que le dossier courant")
+    parser.add_argument("--output", default=OUTPUT_PATH,
+                         help=f"Chemin du fichier pptx de sortie (défaut : {OUTPUT_PATH}) — utile "
+                              f"pour générer des rapports nommés/rangés par client")
     args = parser.parse_args()
 
     if args.debug and not args.ai:
@@ -1123,4 +1135,6 @@ if __name__ == "__main__":
                   sla_slide=not args.no_sla_slide,
                   dispositif_slide=not args.no_dispositif_slide,
                   log_ingestion_slide=not args.no_log_ingestion_slide,
-                  price_per_gb=args.price_per_gb)
+                  price_per_gb=args.price_per_gb,
+                  template_path=args.template_path,
+                  output_path=args.output)

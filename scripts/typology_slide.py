@@ -323,8 +323,6 @@ def clone_slide_from(prs, source_slide):
 
 
 def _get_shape_by_name(slide, name):
-    """Retourne la shape de la slide portant le nom donne, ou None si aucune
-    shape ne correspond."""
     for shape in slide.shapes:
         if shape.name == name:
             return shape
@@ -332,12 +330,6 @@ def _get_shape_by_name(slide, name):
 
 
 def _set_cell_text(cell, text, size_pt, bold=False, color=None, align=None, bg=None):
-    """Remplit une cellule de tableau pptx en une seule fonction utilitaire
-    (texte, fond, alignement, police/taille/gras/couleur du run) -- variante
-    dupliquee dans sla_slide.py et log_ingestion_slide.py (avec, dans ces
-    deux fichiers, une garde supplementaire pour le cas d'un texte vide,
-    qui ne cree aucun run -- non necessaire ici car aucun appelant de ce
-    module ne passe de texte vide)."""
     cell.text = str(text)
     cell.vertical_anchor = MSO_ANCHOR.MIDDLE
     if bg is not None:
@@ -355,9 +347,6 @@ def _set_cell_text(cell, text, size_pt, bold=False, color=None, align=None, bg=N
 
 
 def _evolution_style(evolution: str) -> dict:
-    """Retourne le style badge (couleur de texte + fond) associe a une
-    valeur d'evolution : vert pour "Nouveau" ou une baisse, gris pour "0"
-    (stable), rouge pour une hausse (cf EVOLUTION_STYLES)."""
     if evolution == "Nouveau":
         return EVOLUTION_STYLES["new"]
     if evolution == "0":

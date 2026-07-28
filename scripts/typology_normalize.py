@@ -29,18 +29,37 @@ _SUFFIX_RE = re.compile(r"\s+involving\s+(?:one|multiple|no)\s+\S+\s*$", re.IGNO
 _TRAILING_INVISIBLE_RE = re.compile(r"[\s\u200b\u200c\u200d\ufeff]+$")
 
 # Familles de typologies repliees sur un libelle canonique (demande du
-# 28/07/2026). Purview IRM emet un Title par POLITIQUE et par date, ex:
-# "Purview IRM ('3986874d') Strategie rapide sur les fuites de donnees -
-# 9/7/2026" -- sans repliage, chaque politique forme sa propre ligne dans
-# la slide d'evolution et le suivi mois par mois devient impossible (la
-# date changeant, aucun titre ne se retrouve d'un mois sur l'autre).
+# 28/07/2026). Certains produits emettent un Title unique par instance --
+# politique + date pour Purview IRM, politique + objet du mail pour DLP :
+#   "Purview IRM ('3986874d') Strategie rapide sur les fuites de donnees
+#    - 9/7/2026"
+#   "DLP policy (Block sharing RGPD sensitive information via O365)
+#    matched for email with subject (RE: modelform reglt FA)"
+# Sans repliage, chaque instance forme sa propre ligne dans la slide
+# d'evolution et le suivi mois par mois devient impossible (la date ou
+# l'objet du mail changeant, aucun titre ne se retrouve d'un mois sur
+# l'autre).
+#
+# Le libelle est un gabarit passe a Match.expand() : une chaine constante
+# replie toute la famille sur une ligne unique (Purview IRM), un gabarit
+# avec reference de groupe (\1) conserve la partie STABLE du titre. Pour
+# DLP, la partie stable est le nom de la politique, entre les premieres
+# parentheses -- il est donc extrait du titre lui-meme, sans liste de
+# politiques a maintenir dans le code. Une politique DLP dont le titre ne
+# suivrait pas cette forme est rattrapee par la regle generique suivante
+# (ordre significatif : la premiere regle qui matche gagne), pour qu'elle
+# ne reparte pas en une ligne par incident.
+#
 # Ancrage en debut de titre (^) : ne replie pas un titre qui mentionnerait
 # la famille au milieu d'une autre phrase.
-# Contrepartie assumee : le detail par politique n'est plus conserve dans
-# l'historique Excel (cf excel_history.write_history) -- seul le volume
-# global de la famille l'est.
+# Contrepartie assumee : le detail sous le libelle canonique n'est plus
+# conserve dans l'historique Excel (cf excel_history.write_history) --
+# pour Purview IRM, la politique et sa date ; pour DLP, l'objet du mail
+# ou du document concerne.
 _FAMILY_RULES = [
     (re.compile(r"^Purview IRM\b", re.IGNORECASE), "Purview IRM"),
+    (re.compile(r"^DLP policy\s*\(([^)]*)\)", re.IGNORECASE), r"DLP Policy – \1"),
+    (re.compile(r"^DLP policy\b", re.IGNORECASE), "DLP Policy"),
 ]
 
 
@@ -54,8 +73,9 @@ def normalize_typology(title: str) -> str:
     result = _TRAILING_INVISIBLE_RE.sub("", result)
     result = result.strip()
     for pattern, label in _FAMILY_RULES:
-        if pattern.search(result):
-            return label
+        match = pattern.search(result)
+        if match:
+            return match.expand(label).strip()
     return result
 
 

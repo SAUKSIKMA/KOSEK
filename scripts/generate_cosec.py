@@ -70,6 +70,9 @@ ENTITY_FIELDS = [
     ("Processes",      "Processes"),
     ("CloudApps",      "Cloud Apps"),
     ("Mailboxes",      "Mailboxes"),
+    # Valeur affichée = objet du mail (cf sentinel_query, entité
+    # "Mail message") -- entité principale des incidents DLP.
+    ("MailMessages",   "Mail Messages"),
 ]
 
 
@@ -159,11 +162,22 @@ def build_entities_lines(row: dict) -> list[tuple[str, str]]:
     Retourne une liste de tuples (label, valeurs_concatenees) pour les entités non vides.
     Les valeurs du même type sont regroupées sur une seule ligne.
     Ex : [("Accounts", "alice@contoso.com, bob@contoso.com"), ("Hosts", "DESKTOP-ABC")]
+
+    Les doublons sont retirés (premier ordre d'apparition conservé) --
+    demande du 28/07/2026, motivée par les incidents DLP dont plusieurs
+    entités "Mail message" portent le même objet. Les make_set() de la
+    requête ne suffisent pas : le make_set externe déduplique des TABLEAUX
+    d'alerte entiers, pas les valeurs qu'ils contiennent, donc une valeur
+    présente dans deux alertes aux entités différentes ressortait deux
+    fois. La déduplication s'applique à tous les types d'entités, pas
+    seulement aux objets de mail.
     """
     lines = []
     for col, label in ENTITY_FIELDS:
         values = parse_json_array(row.get(col, ""))
-        cleaned = [v.strip().strip('"') for v in values if v.strip().strip('"')]
+        cleaned = list(dict.fromkeys(
+            v.strip().strip('"') for v in values if v.strip().strip('"')
+        ))
         if cleaned:
             lines.append((label, ", ".join(cleaned)))
     return lines

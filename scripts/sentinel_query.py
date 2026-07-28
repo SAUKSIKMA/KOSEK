@@ -105,6 +105,16 @@ def _month_bounds(year: int, month: int) -> tuple:
 # pertinents a presenter independamment du traitement manuel ou non).
 # Status == "Closed" reste exige dans tous les cas (y compris pour cette
 # exception) : on ne remonte pas un incident encore ouvert.
+#
+# Complete le 28/07/2026 : entite "Mail message" ajoutee a l'extraction
+# (MailMessages), sans quoi les incidents DLP -- dont c'est l'entite
+# principale -- n'affichaient AUCUNE entite sur leur slide de detail.
+# La valeur remontee est l'OBJET du mail (Entities.Subject), seule partie
+# lisible de cette entite. Le nom du type est normalise en amont du case()
+# ("mailMessage" / "mail-message" -> "mail-message") : la casse exacte
+# renvoyee par Sentinel n'est pas la meme selon les connecteurs, et les
+# deux formes coexistent avec la convention en minuscules-tirets des
+# autres types ("security-group", "cloud-application").
 COSEC_QUERY_TEMPLATE = """
 SecurityIncident
 | where CreatedTime >= datetime({start}) and CreatedTime < datetime({end})
@@ -125,10 +135,13 @@ SecurityIncident
     | where TimeGenerated >= datetime({start})
     | mv-expand todynamic(Entities)
     | extend EntityType = tostring(Entities.Type)
+    | extend EntityType = iff(tolower(EntityType) in ("mailmessage", "mail-message"),
+                              "mail-message", EntityType)
     | extend EntityValue = case(
         EntityType == "account",           tostring(Entities.DisplayName),
         EntityType == "security-group",    tostring(Entities.DistinguishedName),
         EntityType == "mailbox",           tostring(Entities.MailboxPrimaryAddress),
+        EntityType == "mail-message",      tostring(Entities.Subject),
         EntityType == "ip",                tostring(Entities.Address),
         EntityType == "url",               tostring(Entities.Url),
         EntityType == "host",              tostring(Entities.HostName),
@@ -151,7 +164,8 @@ SecurityIncident
         Files          = make_set_if(EntityValue, EntityType == "file"),
         Processes      = make_set_if(EntityValue, EntityType == "process"),
         CloudApps      = make_set_if(EntityValue, EntityType == "cloud-application"),
-        Mailboxes      = make_set_if(EntityValue, EntityType == "mailbox")
+        Mailboxes      = make_set_if(EntityValue, EntityType == "mailbox"),
+        MailMessages   = make_set_if(EntityValue, EntityType == "mail-message")
         by SystemAlertId
 ) on $left.AlertId == $right.SystemAlertId
 | summarize
@@ -174,7 +188,8 @@ SecurityIncident
     Files                 = make_set(tostring(Files)),
     Processes             = make_set(tostring(Processes)),
     CloudApps             = make_set(tostring(CloudApps)),
-    Mailboxes             = make_set(tostring(Mailboxes))
+    Mailboxes             = make_set(tostring(Mailboxes)),
+    MailMessages          = make_set(tostring(MailMessages))
     by IncidentName, ProviderIncidentId
 | project
     IncidentName,
@@ -193,6 +208,7 @@ SecurityIncident
     Processes,
     CloudApps,
     Mailboxes,
+    MailMessages,
     Classification,
     ClassificationReason,
     ClassificationComment,

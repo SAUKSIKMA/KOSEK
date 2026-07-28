@@ -70,7 +70,7 @@ ou sans passage par l'Excel historique selon la slide (cf section 5).
 
 | Fichier | Rôle |
 |---|---|
-| `typology_normalize.py` | Retire les suffixes de comptage d'entités générés automatiquement par Sentinel dans les titres d'incidents, puis ré-agrège par typologie normalisée. |
+| `typology_normalize.py` | Retire les suffixes de comptage d'entités générés automatiquement par Sentinel dans les titres d'incidents, replie les familles de titres à identifiant/date variable sur un libellé canonique (`_FAMILY_RULES`, ex. « Purview IRM »), puis ré-agrège par typologie normalisée. |
 | `surveillance_normalize.py` | Assemble les 3 requêtes de la slide « État de la surveillance » (gravité, classification de clôture, MTTA/MTTR/MTTC) en une ligne unique. Contient la logique de correspondance des valeurs `Classification` (enum Sentinel toujours en anglais). |
 | `sla_normalize.py` | Convertit les dépassements de SLA bruts en lignes prêtes pour l'Excel (tri par gravité, type de SLA, date), avec conversion des dates ISO en heure de Paris. |
 | `mitre_normalize.py` | Combine les statistiques d'incidents par tactique MITRE ATT&CK avec le nombre de règles analytics actives par tactique, et convertit les clés brutes Microsoft (PascalCase) en libellés affichés. |

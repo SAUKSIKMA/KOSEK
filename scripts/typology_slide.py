@@ -7,7 +7,8 @@ le DERNIER mois disponible dans l'historique, avec une colonne
 "Evolution" comparant chaque typologie au mois precedent (Nouveau / +N /
 -N / 0). Le tableau est insere directement dans la 2e slide du template
 (template_slide.pptx) -- on NE CREE PAS de nouvelle slide, on reutilise
-celle deja presente (titre deja rempli, sous-titre vide a completer).
+celle deja presente (titre ET sous-titre repris tels quels du template
+depuis le 28/07/2026 -- le code n'ecrit plus que le tableau).
 """
 
 import copy
@@ -447,11 +448,13 @@ def fill_evolution_slide(prs, evo_slide, latest_month: str, previous_month, tabl
     paginate_evolution_groups / clone_slide_from) plutot que de laisser
     le tableau deborder ou de tronquer des typologies.
 
-    Le titre de la slide ("Evolution des incidents par typologie") est
-    deja renseigne dans le template sur evo_slide -- on ne le touche pas
-    (seules les eventuelles slides de continuation voient leur titre
-    suffixe "(suite)"). Le sous-titre (vide dans le template) est
-    complete avec la periode sur CHAQUE slide produite.
+    Titre ET sous-titre sont repris TELS QUELS du template (decision du
+    28/07/2026 : ils sont rediges dans template_slide.pptx, le code n'y
+    ecrit plus rien). Seule exception, les eventuelles slides de
+    continuation voient leur titre suffixe "(suite)". latest_month et
+    previous_month ne servent donc plus qu'a la journalisation cote
+    appelant (cf generate_cosec.generate_pptx) -- ils portaient jusqu'ici
+    le sous-titre "Mois de reference : ... (evolution vs ...)".
 
     Retourne la liste de TOUTES les slides "Evolution" produites,
     evo_slide TOUJOURS en premier, suivi des eventuelles slides de
@@ -460,27 +463,6 @@ def fill_evolution_slide(prs, evo_slide, latest_month: str, previous_month, tabl
     INVERSE, pour preserver leur ordre relatif final (meme principe que
     pour les autres slides de synthese, cf generate_pptx).
     """
-    if previous_month:
-        base_subtitle_text = f"Mois de référence : {latest_month}  (évolution vs {previous_month})"
-    else:
-        base_subtitle_text = f"Mois de référence : {latest_month}  (premier mois suivi)"
-
-    # Pas de mise en forme explicite sur le run -- decision du 23/06/2026 :
-    # le placeholder herite du layout (lstStyle, idx=10) un format Arial
-    # Black 33pt navy concu pour cet usage. On avait initialement (le
-    # 22/06/2026) force un Arial 16pt italique en neutralisant le
-    # crenage (spc="-360" -> "0") car ce crenage tres negatif, concu
-    # pour du 33pt, faisait se chevaucher les lettres a 16pt. Cette
-    # neutralisation n'a plus lieu d'etre puisqu'on ne reduit plus la
-    # taille : laisser le run "nu" restitue le format du template
-    # tel quel, comme c'est deja naturellement le cas pour le sous-titre
-    # "Focus sur incident" des slides de detail (jamais touche par le
-    # code) -- cf demande utilisateur de reprendre ce meme format pour
-    # toutes les slides de synthese.
-    subtitle = _get_shape_by_name(evo_slide, SUBTITLE_SHAPE_NAME)
-    if subtitle is not None:
-        subtitle.text_frame.text = base_subtitle_text
-
     groups = group_table_rows_by_source(table_rows)
 
     slide_height = prs.slide_height
@@ -497,17 +479,12 @@ def fill_evolution_slide(prs, evo_slide, latest_month: str, previous_month, tabl
     for i, cont_slide in enumerate(continuation_slides, start=1):
         suite_label = "(suite)" if n_pages <= 2 else f"(suite {i}/{n_pages - 1})"
 
+        # La notion de "(suite)" n'apparait QUE dans le titre (demande du
+        # 29/06/2026) ; le sous-titre, recopie tel quel du template par
+        # clone_slide_from(), reste identique a celui de la slide principale.
         title_shape = _get_shape_by_name(cont_slide, TITLE_SHAPE_NAME)
         if title_shape is not None:
             title_shape.text_frame.text = f"{title_shape.text_frame.text} {suite_label}"
-
-        cont_subtitle = _get_shape_by_name(cont_slide, SUBTITLE_SHAPE_NAME)
-        if cont_subtitle is not None:
-            # Demande du 29/06/2026 : la notion de "(suite)" ne doit
-            # apparaitre QUE dans le titre de la slide (suite_label,
-            # ci-dessus) -- le sous-titre reste identique a celui de la
-            # slide principale, sans suffixe "— suite".
-            cont_subtitle.text_frame.text = base_subtitle_text
 
     all_slides = [evo_slide] + continuation_slides
     for slide, items in zip(all_slides, pages):

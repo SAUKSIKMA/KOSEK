@@ -26,7 +26,7 @@ from pptx.enum.chart import XL_CHART_TYPE, XL_LEGEND_POSITION
 from pptx.oxml.ns import qn
 
 from typology_slide import (
-    BRAND_GREEN, BRAND_NAVY, EVOLUTION_STYLES, SUBTITLE_SHAPE_NAME,
+    BRAND_GREEN, BRAND_NAVY, EVOLUTION_STYLES,
 )
 from surveillance_normalize import SEVERITY_LABELS, SEVERITY_ORDER
 
@@ -206,13 +206,6 @@ def _evolution_style(evolution: str) -> dict:
     if evolution.startswith("+"):
         return EVOLUTION_STYLES["up"]
     return EVOLUTION_STYLES["down"]
-
-
-def _get_shape_by_name(slide, name):
-    for shape in slide.shapes:
-        if shape.name == name:
-            return shape
-    return None
 
 
 # ---------------------------------------------------------------------------
@@ -514,24 +507,16 @@ def _add_kpi_card(slide, left, top, width, height, key: str, value: float, previ
 
 def fill_surveillance_slide(prs, slide, latest_month: str, previous_month, latest: dict, previous):
     """
-    Remplit la 3e slide du template (deja presente, titre deja rempli)
-    avec : sous-titre (periode), panneau gravite/cloture (gauche), 2 donuts
-    (droite haut), 3 cartes KPI MTTA/MTTR/MTTC (droite bas).
-    """
-    subtitle = _get_shape_by_name(slide, SUBTITLE_SHAPE_NAME)
-    if subtitle is not None:
-        if previous_month:
-            subtitle_text = f"Mois de référence : {latest_month}  (évolution vs {previous_month})"
-        else:
-            subtitle_text = f"Mois de référence : {latest_month}  (premier mois suivi)"
-        # Pas de mise en forme explicite sur le run -- cf typology_slide.
-        # fill_evolution_slide pour le detail de la decision du 23/06/2026 :
-        # on laisse le run "nu" pour heriter du format Arial Black 33pt
-        # navy du placeholder (idx=10 du layout), au lieu du Arial 16pt
-        # italique force precedemment (devenu inutile puisqu'on ne reduit
-        # plus la taille du sous-titre).
-        subtitle.text_frame.text = subtitle_text
+    Remplit la 3e slide du template (deja presente, titre ET sous-titre
+    deja rediges dans le template -- le code n'y ecrit plus rien depuis le
+    28/07/2026, cf typology_slide.fill_evolution_slide) avec : panneau
+    gravite/cloture (gauche), 2 donuts (droite haut), 3 cartes KPI
+    MTTA/MTTR/MTTC (droite bas).
 
+    latest_month et previous_month ne servent plus qu'a la journalisation
+    cote appelant (cf generate_cosec.generate_pptx) -- ils portaient
+    jusqu'ici le sous-titre "Mois de reference : ... (evolution vs ...)".
+    """
     slide_width = prs.slide_width
     slide_height = prs.slide_height
     margin = Inches(1.6)

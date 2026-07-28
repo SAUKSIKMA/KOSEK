@@ -27,7 +27,7 @@ from pptx.enum.text import PP_ALIGN, MSO_ANCHOR
 
 from typology_slide import (
     BRAND_GREEN, HEADER_FONT_COLOR, ROW_BAND_WHITE, ROW_BAND_GREEN_TINT,
-    SUBTITLE_SHAPE_NAME, HEADER_ROW_HEIGHT,
+    HEADER_ROW_HEIGHT,
 )
 
 SHEET_NAME = "SLA"
@@ -99,13 +99,6 @@ def _format_dt(value) -> str:
     return str(value)
 
 
-def _get_shape_by_name(slide, name):
-    for shape in slide.shapes:
-        if shape.name == name:
-            return shape
-    return None
-
-
 def _set_cell_text(cell, text, size_pt, bold=False, color=None, align=None, bg=None):
     cell.text = str(text)
     cell.vertical_anchor = MSO_ANCHOR.MIDDLE
@@ -138,23 +131,13 @@ def fill_sla_slide(prs, slide, year: int, month: int, table_rows: list):
     contient que la ligne d'en-tete -- c'est le comportement EXPLICITEMENT
     attendu (absence de depassement = bonne nouvelle a afficher, pas une
     slide a masquer).
+
+    Titre ET sous-titre sont repris TELS QUELS du template (decision du
+    28/07/2026, cf typology_slide.fill_evolution_slide). year et month ne
+    servent donc plus qu'a la journalisation cote appelant (cf
+    generate_cosec.generate_pptx) -- ils portaient jusqu'ici le sous-titre
+    "Mois de reference : ... (N depassements / aucun depassement)".
     """
-    month_str = f"{year:04d}-{month:02d}"
-
-    subtitle = _get_shape_by_name(slide, SUBTITLE_SHAPE_NAME)
-    if subtitle is not None:
-        if table_rows:
-            n = len(table_rows)
-            subtitle_text = f"Mois de référence : {month_str}  ({n} dépassement{'s' if n > 1 else ''})"
-        else:
-            subtitle_text = f"Mois de référence : {month_str}  (aucun dépassement)"
-        # Pas de mise en forme explicite sur le run -- cf typology_slide.
-        # fill_evolution_slide pour le detail de la decision du 23/06/2026 :
-        # on laisse le run "nu" pour heriter du format Arial Black 33pt
-        # navy du placeholder (idx=10 du layout), au lieu du Arial 16pt
-        # italique force precedemment.
-        subtitle.text_frame.text = subtitle_text
-
     slide_width = prs.slide_width
     slide_height = prs.slide_height
     margin = Inches(1.1)

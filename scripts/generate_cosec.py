@@ -375,12 +375,22 @@ def _estimate_zone_texte_9_height_in(logical_lines: list, usable_width_in: float
 
 
 def fill_zone_texte_9(shape, row: dict, description_override: str = None,
-                       occurrences_override: str = None, slide_height=None):
+                       occurrences_override: str = None, title_override: str = None,
+                       slide_height=None):
     """
     Remplit la zone texte principale (ZoneTexte 9) avec les données de l'incident.
 
     description_override : si fourni (texte reformulé par Claude API), remplace
     le ClassificationComment brut comme contenu du champ Description.
+
+    title_override : si fourni, remplace le Title brut de l'incident comme
+    contenu du champ "Typologie" -- décision du 28/07/2026 : ce champ affiche
+    la typologie NORMALISÉE (cf typology_normalize.normalize_typology), c'est-
+    à-dire exactement la clé sur laquelle porte le champ "Occurrence(s)"
+    ci-dessous et la ligne correspondante de la slide d'évolution. Sans cela,
+    une famille repliée (ex "Purview IRM") afficherait le titre complet d'UNE
+    politique en regard d'un nombre d'occurrences portant sur toute la
+    famille. Repli sur row["Title"] si non fourni.
 
     occurrences_override : si fourni, remplace le champ "Occurrences" brut de
     la requête (AD.alertsCount, propre à cet incident) -- depuis le
@@ -421,7 +431,7 @@ def fill_zone_texte_9(shape, row: dict, description_override: str = None,
     orig_paras = tf.paragraphs
 
     # --- Extraction des données ---
-    title        = row.get("Title", "")
+    title        = title_override if title_override is not None else row.get("Title", "")
     occurrences  = occurrences_override if occurrences_override is not None else row.get("Occurrences", "")
     alert_sources = ", ".join(parse_json_array(row.get("AlertSources", "")))
     severity     = row.get("Severity", "")
@@ -873,6 +883,12 @@ def generate_pptx(workspace_id: str, year: int, month: int, tenant_id: str = Non
         # brute (cf fill_zone_texte_9) si la typologie n'a pas de
         # correspondance (données indisponibles, ou écart de périmètre
         # improbable entre les deux requêtes).
+        # Cette typologie normalisée sert AUSSI de libellé au champ
+        # "Typologie" de la slide (title_override) -- décision du
+        # 28/07/2026 : les deux champs doivent porter sur le même
+        # périmètre, sans quoi le titre complet d'une politique
+        # (ex "Purview IRM ('3986874d') ... - 9/7/2026") se retrouverait
+        # en regard d'un compte portant sur toute la famille "Purview IRM".
         normalized_title = normalize_typology(row.get("Title", ""))
         occurrence_count = occurrence_by_typology.get(normalized_title)
         occurrences_override = str(occurrence_count) if occurrence_count is not None else None
@@ -881,7 +897,8 @@ def generate_pptx(workspace_id: str, year: int, month: int, tenant_id: str = Non
         zt9 = get_shape(slide, "ZoneTexte 9")
         if zt9:
             fill_zone_texte_9(zt9, row, description_override=description_override,
-                               occurrences_override=occurrences_override, slide_height=prs.slide_height)
+                               occurrences_override=occurrences_override,
+                               title_override=normalized_title, slide_height=prs.slide_height)
 
         # Les blocs Détection / Réponse automatisée / Remédiation restent N/A pour le POC
         # (seront alimentés par Claude API dans une prochaine étape)

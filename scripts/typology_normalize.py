@@ -7,6 +7,11 @@ user", "... involving multiple accounts"). Ce suffixe varie selon le
 nombre d'entites correlees a l'incident, mais ne change pas la typologie
 de la menace -- il faut donc le retirer avant d'agreger par typologie,
 sous peine d'eclater une meme typologie en plusieurs lignes.
+
+Meme motif, cause differente (cf _FAMILY_RULES ci-dessous) : certains
+produits generent un Title UNIQUE par instance de politique, portant un
+identifiant et une date. Ces titres sont replies sur un libelle canonique
+pour que la famille forme une seule ligne dans la slide d'evolution.
 """
 
 import json
@@ -23,14 +28,35 @@ _SUFFIX_RE = re.compile(r"\s+involving\s+(?:one|multiple|no)\s+\S+\s*$", re.IGNO
 # cosmetique mais a nettoyer pour eviter des doublons "invisibles".
 _TRAILING_INVISIBLE_RE = re.compile(r"[\s\u200b\u200c\u200d\ufeff]+$")
 
+# Familles de typologies repliees sur un libelle canonique (demande du
+# 28/07/2026). Purview IRM emet un Title par POLITIQUE et par date, ex:
+# "Purview IRM ('3986874d') Strategie rapide sur les fuites de donnees -
+# 9/7/2026" -- sans repliage, chaque politique forme sa propre ligne dans
+# la slide d'evolution et le suivi mois par mois devient impossible (la
+# date changeant, aucun titre ne se retrouve d'un mois sur l'autre).
+# Ancrage en debut de titre (^) : ne replie pas un titre qui mentionnerait
+# la famille au milieu d'une autre phrase.
+# Contrepartie assumee : le detail par politique n'est plus conserve dans
+# l'historique Excel (cf excel_history.write_history) -- seul le volume
+# global de la famille l'est.
+_FAMILY_RULES = [
+    (re.compile(r"^Purview IRM\b", re.IGNORECASE), "Purview IRM"),
+]
+
 
 def normalize_typology(title: str) -> str:
-    """Retire le suffixe de comptage d'entites et les caracteres invisibles finaux."""
+    """Retire le suffixe de comptage d'entites et les caracteres invisibles
+    finaux, puis replie les familles de _FAMILY_RULES sur leur libelle
+    canonique."""
     if not title:
         return title
     result = _SUFFIX_RE.sub("", title)
     result = _TRAILING_INVISIBLE_RE.sub("", result)
-    return result.strip()
+    result = result.strip()
+    for pattern, label in _FAMILY_RULES:
+        if pattern.search(result):
+            return label
+    return result
 
 
 def aggregate_typology_rows(rows: list[dict]) -> list[dict]:

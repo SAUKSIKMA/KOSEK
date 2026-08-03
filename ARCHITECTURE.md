@@ -43,7 +43,10 @@ l'orchestrateur `run_all_clients.py` (section 9).
                             │   (openpyxl)   │       (--update-history)
                             └────────────────┘
 
-  Optionnel (--ai) :  generate_cosec.py ─▶ anonymizer.py ─▶ reformulate.py ─▶ Claude API
+  Optionnel (--ai), backend fixé en dur dans reformulate.py (cf section 3.6) :
+    BACKEND="claude" : generate_cosec.py ─▶ anonymizer.py ─▶ reformulate.py ─▶ Claude API
+    BACKEND="local"  : generate_cosec.py ───────────────────▶ reformulate.py ─▶ Ollama 127.0.0.1
+                                          (pas d'anonymisation)                (cosec-reformulateur)
 ```
 
 Chaque slide de synthèse (Évolution, Surveillance, SLA, Dispositif de
@@ -96,8 +99,39 @@ ou sans passage par l'Excel historique selon la slide (cf section 5).
 
 | Fichier | Rôle |
 |---|---|
-| `anonymizer.py` | Anonymisation réversible (UPN, IP, hôtes, fichiers, groupes...) avant tout envoi de texte à l'API Claude, avec table de correspondance locale et détection de fuite résiduelle. |
-| `reformulate.py` | Construit le payload anonymisé d'un incident, appelle l'API Claude pour produire une description de niveau consultant, puis désanonymise le résultat. |
+| `anonymizer.py` | Anonymisation réversible (UPN, IP, hôtes, fichiers, groupes...) avant tout envoi de texte à l'API Claude, avec table de correspondance locale et détection de fuite résiduelle. Non utilisé par le backend local. |
+| `reformulate.py` | Construit le payload d'un incident, appelle le modèle pour produire une description de niveau consultant, puis (backend Claude uniquement) désanonymise le résultat. |
+
+**Choix du backend (ajouté le 03/08/2026).** `reformulate.py` expose deux
+backends, sélectionnés par la constante `BACKEND` en tête de fichier —
+**délibérément pas d'option CLI**, le choix relève de la configuration du
+poste et non de l'exécution :
+
+| `BACKEND` | Modèle | Anonymisation | Prérequis |
+|---|---|---|---|
+| `"claude"` (défaut) | API Claude distante (`CLAUDE_MODEL`) | **Oui** — payload anonymisé à l'aller, désanonymisé au retour | `ANTHROPIC_API_KEY`, paquet `anthropic` |
+| `"local"` | `cosec-reformulateur` (dérivé de mistral-small3.2) servi par Ollama sur `http://127.0.0.1:11434/api/generate` | **Non** — aucune donnée ne quitte la machine | Ollama démarré, modèle présent |
+
+Conséquences du backend local, dans `reformulate.py` :
+
+- `make_anonymizer()` retourne `None` ; `build_payload()` et
+  `reformulate_description()` traitent alors les valeurs en clair, et la
+  désanonymisation est sautée (il n'y a pas d'alias à réinjecter).
+- La règle d'anonymisation est retirée du prompt système
+  (`build_system_prompt(anonymized=False)`) : mentionner des alias
+  `USER_1`/`IP_1` inexistants induirait le modèle en erreur.
+- `--debug` (validation humaine avant envoi) est sans effet et le signale :
+  il n'existe pas d'anonymisation à valider quand rien ne sort de la machine.
+- `make_client()` vérifie au démarrage que le serveur Ollama répond et
+  interrompt le script sinon (`sys.exit(1)`), plutôt que d'échouer incident
+  par incident.
+- Le prompt système du dépôt est envoyé explicitement dans le champ `system`
+  de la requête : il **écrase** celui du Modelfile de `cosec-reformulateur`
+  (qui, à ce jour, hérite du prompt générique de Mistral Small 3.2). Les
+  paramètres du Modelfile non fournis dans la requête — `temperature 0.2`,
+  `seed 42`, `num_ctx 8192` — restent appliqués.
+- L'appel HTTP utilise `urllib` (bibliothèque standard) : le backend local
+  n'ajoute **aucune dépendance** et ne requiert pas le paquet `anthropic`.
 
 ## 4. Conventions internes notables
 
@@ -174,7 +208,7 @@ pip install azure-identity azure-monitor-query azure-mgmt-resourcegraph \
 | `openpyxl` | `excel_history.py`, `*_slide.py` (lecture) | Lecture/écriture de `historique_cosec.xlsx` | Oui |
 | `python-pptx` (package `pptx`) | `generate_cosec.py`, `*_slide.py` | Génération du rapport PowerPoint | Oui |
 | `lxml` | `generate_cosec.py`, `surveillance_slide.py`, `log_ingestion_slide.py`, `typology_slide.py` | Manipulation directe du XML pptx (runs, mise en page de légende, clonage de relations) | Oui |
-| `anthropic` | `reformulate.py` | Appel à l'API Claude pour la reformulation des descriptions d'incidents | **Non** — uniquement requis si le flag `--ai` est utilisé |
+| `anthropic` | `reformulate.py` | Appel à l'API Claude pour la reformulation des descriptions d'incidents | **Non** — uniquement requis avec `--ai` **et** `BACKEND = "claude"` (import différé dans `make_client()`) |
 
 ### 7.2 Bibliothèques standard utilisées
 
@@ -191,7 +225,11 @@ la PEP 585. Une version 3.10 ou 3.11 est recommandée.
 
 | Variable | Requise pour | Description |
 |---|---|---|
-| `ANTHROPIC_API_KEY` | `--ai` | Clé d'API Anthropic, utilisée par `reformulate.make_client()`. Le script s'arrête avec une erreur explicite si elle est absente et que `--ai` est demandé. |
+| `ANTHROPIC_API_KEY` | `--ai` avec `BACKEND = "claude"` | Clé d'API Anthropic, utilisée par `reformulate.make_client()`. Le script s'arrête avec une erreur explicite si elle est absente et que `--ai` est demandé. Inutile avec `BACKEND = "local"`. |
+
+Le backend local n'utilise aucune variable d'environnement : son URL, son
+modèle et son délai d'expiration sont des constantes de `reformulate.py`
+(`LOCAL_URL`, `LOCAL_MODEL`, `LOCAL_TIMEOUT`).
 
 ## 8. Authentification Azure
 
@@ -285,7 +323,7 @@ python run_all_clients.py --year 2026 --month 6 --update-history
 # Un sous-ensemble de clients seulement
 python run_all_clients.py --year 2026 --month 6 --only CLIENT1,CLIENT2
 
-# Avec reformulation IA (Claude)
+# Avec reformulation IA (backend Claude ou local selon reformulate.py, cf 3.6)
 python run_all_clients.py --year 2026 --month 6 --update-history --ai
 ```
 

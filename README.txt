@@ -26,8 +26,16 @@ Tous les clients, mois de juin 2026, avec mise à jour de l'historique :
 Un seul client (ou un sous-ensemble), sans toucher aux autres :
     python run_all_clients.py --year 2026 --month 6 --only CLIENT1
 
-Avec reformulation IA (Claude) :
+Avec reformulation IA :
     python run_all_clients.py --year 2026 --month 6 --update-history --ai
+
+    Le backend est fixé en dur dans scripts/reformulate.py (constante
+    BACKEND, en tête de fichier), pas en ligne de commande :
+      BACKEND = "claude"  -> API Claude distante, payload anonymisé
+                             (nécessite ANTHROPIC_API_KEY)
+      BACKEND = "local"   -> modèle cosec-reformulateur via Ollama sur
+                             127.0.0.1:11434, sans anonymisation
+                             (nécessite Ollama démarré)
 
 Un client isolé, en mode "ancien script" (toujours possible, inchangé) :
     cd scripts

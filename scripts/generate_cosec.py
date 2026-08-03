@@ -853,19 +853,25 @@ def generate_pptx(workspace_id: str, year: int, month: int, tenant_id: str = Non
 
     print(f"✅ {len(rows)} incident(s) trouvé(s) via Azure Monitor Query.")
 
-    # Prépare le client Claude API et l'anonymizer si l'IA est activée
+    # Prépare le backend de reformulation et l'anonymizer si l'IA est activée.
+    # Le choix du backend (Claude API anonymisée / modèle local sans
+    # anonymisation) est fixé en dur dans reformulate.py — constante BACKEND,
+    # volontairement pas exposée en option CLI (décision du 03/08/2026).
+    # anon vaut None quand le backend n'anonymise pas.
     client = None
     anon = None
     if use_ai:
-        from reformulate import make_client, reformulate_description
-        from anonymizer import Anonymizer
+        from reformulate import make_client, make_anonymizer, backend_description
         try:
             client = make_client()
         except RuntimeError as e:
             print(f"❌ {e}")
             sys.exit(1)
-        anon = Anonymizer()
-        print("🤖 Reformulation IA activée (Claude API)" + (" — mode debug" if debug else ""))
+        anon = make_anonymizer()
+        print(f"🤖 Reformulation IA activée ({backend_description()})"
+              + (" — mode debug" if debug else ""))
+        if debug and anon is None:
+            print("⚠ --debug sans effet avec ce backend : aucune donnée ne quitte la machine.")
 
     # La première slide est le template — on va la remplir puis dupliquer pour les suivantes
     template_slide = prs.slides[0]
@@ -878,7 +884,7 @@ def generate_pptx(workspace_id: str, year: int, month: int, tenant_id: str = Non
         else:
             slide = clone_slide(prs, slide_index=0)
 
-        # Reformulation de la description via Claude API (si activée)
+        # Reformulation de la description via le backend configuré (si activée)
         description_override = None
         if use_ai:
             from reformulate import reformulate_description
@@ -1121,9 +1127,11 @@ if __name__ == "__main__":
     parser.add_argument("--month", type=int, required=True,
                          help="Mois cible 1-12 — utilisée pour les slides de détail ET la slide d'évolution")
     parser.add_argument("--ai", action="store_true",
-                         help="Active la reformulation de la description via Claude API (anonymisée)")
+                         help="Active la reformulation de la description par un LLM — backend fixé en dur "
+                              "dans reformulate.py (Claude API anonymisée, ou modèle local sans anonymisation)")
     parser.add_argument("--debug", action="store_true",
-                         help="Mode debug : demande une validation humaine avant chaque envoi à Claude API")
+                         help="Mode debug : demande une validation humaine avant chaque envoi à Claude API "
+                              "(sans effet avec le backend local, qui n'envoie rien hors de la machine)")
     parser.add_argument("--update-history", action="store_true",
                          help="Récupère l'historique des typologies, de surveillance ET des dépassements SLA "
                               "pour --year/--month et les intègre dans l'Excel avant de générer le pptx")
